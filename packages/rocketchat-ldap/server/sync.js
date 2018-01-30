@@ -1,5 +1,6 @@
 /* globals slugify, SyncedCron */
 
+import _ from 'underscore';
 import LDAP from './ldap';
 
 const logger = new Logger('LDAPSync', {});
@@ -13,16 +14,25 @@ export function slug(text) {
 }
 
 
+export function getPropertyValue(obj, key) {
+	try {
+		return _.reduce(key.split('.'), (acc, el) => acc[el], obj);
+	} catch (err) {
+		return undefined;
+	}
+}
+
+
 export function getLdapUsername(ldapUser) {
 	const usernameField = RocketChat.settings.get('LDAP_Username_Field');
 
 	if (usernameField.indexOf('#{') > -1) {
 		return usernameField.replace(/#{(.+?)}/g, function(match, field) {
-			return ldapUser.object[field];
+			return ldapUser[field];
 		});
 	}
 
-	return ldapUser.object[usernameField];
+	return ldapUser[usernameField];
 }
 
 
@@ -47,12 +57,12 @@ export function getLdapUserUniqueID(ldapUser) {
 
 	if (Unique_Identifier_Field.length > 0) {
 		Unique_Identifier_Field = Unique_Identifier_Field.find((field) => {
-			return !_.isEmpty(ldapUser.object[field]);
+			return !_.isEmpty(ldapUser._raw[field]);
 		});
 		if (Unique_Identifier_Field) {
 			Unique_Identifier_Field = {
 				attribute: Unique_Identifier_Field,
-				value: ldapUser.raw[Unique_Identifier_Field].toString('hex')
+				value: ldapUser._raw[Unique_Identifier_Field].toString('hex')
 			};
 		}
 		return Unique_Identifier_Field;
@@ -72,31 +82,60 @@ export function getDataToSyncUserData(ldapUser, user) {
 		_.map(fieldMap, function(userField, ldapField) {
 			switch (userField) {
 				case 'email':
-					if (!ldapUser.object.hasOwnProperty(ldapField)) {
+					if (!ldapUser.hasOwnProperty(ldapField)) {
 						logger.debug(`user does not have attribute: ${ ldapField }`);
 						return;
 					}
 
-					if (_.isObject(ldapUser.object[ldapField])) {
-						_.map(ldapUser.object[ldapField], function(item) {
+					if (_.isObject(ldapUser[ldapField])) {
+						_.map(ldapUser[ldapField], function(item) {
 							emailList.push({ address: item, verified: true });
 						});
 					} else {
-						emailList.push({ address: ldapUser.object[ldapField], verified: true });
+						emailList.push({ address: ldapUser[ldapField], verified: true });
 					}
 					break;
 
 				default:
-					if (!_.find(whitelistedUserFields, (el) => el === userField.split('.')[0])) {
+					const [outerKey, innerKeys] = userField.split(/\.(.+)/);
+
+					if (!_.find(whitelistedUserFields, (el) => el === outerKey)) {
 						logger.debug(`user attribute not whitelisted: ${ userField }`);
 						return;
 					}
 
-					const tmpLdapField = RocketChat.templateVarHandler(ldapField, ldapUser.object);
-					const userFieldValue = _.reduce(userField.split('.'), (acc, el) => acc[el], user);
+					if (outerKey === 'customFields') {
+						let customFieldsMeta;
 
-					if (tmpLdapField && userFieldValue !== tmpLdapField) {
-						userData[userField] = tmpLdapField;
+						try {
+							customFieldsMeta = JSON.parse(RocketChat.settings.get('Accounts_CustomFields'));
+						} catch (e) {
+							logger.debug('Invalid JSON for Custom Fields');
+							return;
+						}
+
+						if (!getPropertyValue(customFieldsMeta, innerKeys)) {
+							logger.debug(`user attribute does not exist: ${ userField }`);
+							return;
+						}
+					}
+
+					const tmpUserField = getPropertyValue(user, userField);
+					const tmpLdapField = RocketChat.templateVarHandler(ldapField, ldapUser);
+
+					if (tmpLdapField && tmpUserField !== tmpLdapField) {
+						// creates the object structure instead of just assigning 'tmpLdapField' to
+						// 'userData[userField]' in order to avoid the "cannot use the part (...)
+						// to traverse the element" (MongoDB) error that can happen. Do not handle
+						// arrays.
+						// TODO: Find a better solution.
+						const dKeys = userField.split('.');
+						const lastKey = _.last(dKeys);
+						_.reduce(dKeys, (obj, currKey) =>
+							(currKey === lastKey)
+								? obj[currKey] = tmpLdapField
+								: obj[currKey] = obj[currKey] || {}
+							, userData);
 						logger.debug(`user.${ userField } changed to: ${ tmpLdapField }`);
 					}
 			}
@@ -151,7 +190,7 @@ export function syncUserData(user, ldapUser) {
 	}
 
 	if (user && user._id && RocketChat.settings.get('LDAP_Sync_User_Avatar') === true) {
-		const avatar = ldapUser.raw.thumbnailPhoto || ldapUser.raw.jpegPhoto;
+		const avatar = ldapUser._raw.thumbnailPhoto || ldapUser._raw.jpegPhoto;
 		if (avatar) {
 			logger.info('Syncing user avatar');
 
@@ -193,8 +232,8 @@ export function addLdapUser(ldapUser, username, password) {
 		} else {
 			userObject.email = userData.emails[0].address;
 		}
-	} else if (ldapUser.object.mail && ldapUser.object.mail.indexOf('@') > -1) {
-		userObject.email = ldapUser.object.mail;
+	} else if (ldapUser.mail && ldapUser.mail.indexOf('@') > -1) {
+		userObject.email = ldapUser.mail;
 	} else if (RocketChat.settings.get('LDAP_Default_Domain') !== '') {
 		userObject.email = `${ username || uniqueId.value }@${ RocketChat.settings.get('LDAP_Default_Domain') }`;
 	} else {
@@ -213,7 +252,7 @@ export function addLdapUser(ldapUser, username, password) {
 		userObject._id = Accounts.createUser(userObject);
 	} catch (error) {
 		logger.error('Error creating user', error);
-		throw error;
+		return error;
 	}
 
 	syncUserData(userObject, ldapUser);
@@ -235,7 +274,7 @@ export function importNewUsers(ldap) {
 	}
 
 	let count = 0;
-	ldap.searchUsersSync('*', Meteor.bindEnvironment((error, ldapUsers, {next} = {}) => {
+	ldap.searchUsersSync('*', Meteor.bindEnvironment((error, ldapUsers, {next, end} = {}) => {
 		if (error) {
 			throw error;
 		}
@@ -257,10 +296,7 @@ export function importNewUsers(ldap) {
 			}
 
 			// Add user if it was not added before
-			const user = Meteor.users.findOne(userQuery);
-			if (!user) {
-				addLdapUser(ldapUser, username);
-			}
+			let user = Meteor.users.findOne(userQuery);
 
 			if (!user && username && RocketChat.settings.get('LDAP_Merge_Existing_Users') === true) {
 				const userQuery = {
@@ -269,20 +305,27 @@ export function importNewUsers(ldap) {
 
 				logger.debug('userQuery merge', userQuery);
 
-				const user = Meteor.users.findOne(userQuery);
+				user = Meteor.users.findOne(userQuery);
 				if (user) {
 					syncUserData(user, ldapUser);
 				}
 			}
 
-			if (count % 1000 === 0) {
-				logger.info('Imported:', count);
+			if (!user) {
+				addLdapUser(ldapUser, username);
+			}
+
+			if (count % 100 === 0) {
+				logger.info('Import running. Users imported until now:', count);
 			}
 		});
-		next && next();
-	}));
 
-	logger.info('Imported:', count);
+		if (end) {
+			logger.info('Import finished. Users imported:', count);
+		}
+
+		next(count);
+	}));
 }
 
 function sync() {
@@ -339,15 +382,16 @@ const addCronJob = _.debounce(Meteor.bindEnvironment(function addCronJobDebounce
 		return;
 	}
 
-	if (RocketChat.settings.get('LDAP_Sync_Interval')) {
+	if (RocketChat.settings.get('LDAP_Background_Sync_Interval')) {
 		logger.info('Enabling LDAP Background Sync');
 		SyncedCron.add({
 			name: jobName,
-			schedule: (parser) => parser.text(RocketChat.settings.get('LDAP_Sync_Interval')),
+			schedule: (parser) => parser.text(RocketChat.settings.get('LDAP_Background_Sync_Interval')),
 			job() {
 				sync();
 			}
 		});
+		SyncedCron.start();
 	}
 }), 500);
 
