@@ -1,4 +1,8 @@
 /* globals RateLimiter */
+function escapeRegExp(str) {
+    return str.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
+}
+
 RocketChat.URLBlocker = new class {
 	blockURL(_user, _content){
 			if(!RocketChat.authz.hasPermission(_user._id, 'send-url')){
@@ -40,12 +44,12 @@ RocketChat.URLBlocker = new class {
 					+ "[0-9]{2}|[1-9][0-9]|[1-9]|0)\\.(?:25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}"
 					+ "|[1-9][0-9]|[0-9])))"
 					+ "(?:\\:\\d{1,5})?)" // plus option port number
-					+ "(\\/(?:(?:[a-zA-Z0-9\\;\\/\\?\\:\\@\\&\\=\\#\\~"  // plus option query params
+					+ "(\\/(?:(?:[a-zA-Z0-9\\;\\/\\?\\:\\@\\&\\=\\#\\~\\[\\]"  // plus option query params
 					+ "\\-\\.\\+\\!\\*\\'\\(\\)\\,\\_])|(?:\\%[a-fA-F0-9]{2}))*)?"
 					+ "(?:\\b|$)", "g"))
 					if(result && result.length)
 						result.forEach(url => {
-							_content.msg = _content.msg.replace(new RegExp(url, 'gi'), "<This account is *NOT!* authorized to share URL, IP Address.>");
+							_content.msg = _content.msg.replace(new RegExp(escapeRegExp(url), 'gi'), "<This account is *NOT!* authorized to share URL, IP Address.>");
 						})
 			}
 		}
