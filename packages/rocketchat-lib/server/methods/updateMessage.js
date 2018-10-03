@@ -3,7 +3,7 @@ import moment from 'moment';
 Meteor.methods({
 	updateMessage(message) {
 
-		check(message, Match.ObjectIncluding({_id:String}));
+		check(message, Match.ObjectIncluding({ _id:String }));
 
 		if (!Meteor.userId()) {
 			throw new Meteor.Error('error-invalid-user', 'Invalid user', { method: 'updateMessage' });
@@ -50,6 +50,6 @@ Meteor.methods({
 
 		RocketChat.URLBlocker.blockURL(Meteor.user(), message)
 
-		return RocketChat.updateMessage(message, Meteor.user());
+		return RocketChat.updateMessage(message, Meteor.user(), originalMessage);
 	}
 });

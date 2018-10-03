@@ -2,7 +2,7 @@
 
 this.modal = {
 	renderedModal: null,
-	open(config = {}, fn) {
+	open(config = {}, fn, onCancel) {
 		config.confirmButtonText = config.confirmButtonText || (config.type === 'error' ? t('Ok') : t('Send'));
 		config.cancelButtonText = config.cancelButtonText || t('Cancel');
 		config.closeOnConfirm = config.closeOnConfirm == null ? true : config.closeOnConfirm;
@@ -19,9 +19,20 @@ this.modal = {
 		}
 
 		this.close();
-		this.renderedModal = Blaze.renderWithData(Template.rc_modal, config, document.body);
 		this.fn = fn;
+		this.onCancel = onCancel;
 		this.config = config;
+
+		if (config.dontAskAgain) {
+			const dontAskAgainList = RocketChat.getUserPreference(Meteor.userId(), 'dontAskAgainList');
+
+			if (dontAskAgainList && dontAskAgainList.some((dontAsk) => dontAsk.action === config.dontAskAgain.action)) {
+				this.confirm(true);
+				return;
+			}
+		}
+
+		this.renderedModal = Blaze.renderWithData(Template.rc_modal, config, document.body);
 		this.timer = null;
 		if (config.timer) {
 			this.timer = setTimeout(() => this.close(), config.timer);
@@ -32,6 +43,10 @@ this.modal = {
 			Blaze.remove(this.renderedModal);
 		}
 		this.fn = null;
+		if (this.onCancel) {
+			this.onCancel();
+		}
+		this.onCancel = null;
 		if (this.timer) {
 			clearTimeout(this.timer);
 		}
@@ -51,7 +66,7 @@ this.modal = {
 		errorEl.style.display = 'block';
 	},
 	onKeydown(e) {
-		if (e.key === 'Enter') {
+		if (e.key === 'Enter' && !/input|textarea|button/i.test(e.currentTarget.activeElement.tagName)) {
 			e.preventDefault();
 			e.stopPropagation();
 
@@ -66,7 +81,7 @@ this.modal = {
 
 			modal.close();
 		}
-	}
+	},
 };
 
 Template.rc_modal.helpers({
@@ -75,7 +90,7 @@ Template.rc_modal.helpers({
 	},
 	modalIcon() {
 		return `modal-${ this.type }`;
-	}
+	},
 });
 
 Template.rc_modal.onRendered(function() {
@@ -106,8 +121,30 @@ Template.rc_modal.events({
 	},
 	'click .js-confirm'(e, instance) {
 		e.stopPropagation();
+		const { dontAskAgain } = instance.data;
+		if (dontAskAgain && document.getElementById('dont-ask-me-again').checked) {
+			const dontAskAgainObject = {
+				action: dontAskAgain.action,
+				label: dontAskAgain.label,
+			};
+
+			let dontAskAgainList = RocketChat.getUserPreference(Meteor.user(), 'dontAskAgainList');
+			if (dontAskAgainList) {
+				dontAskAgainList.push(dontAskAgainObject);
+			} else {
+				dontAskAgainList = [dontAskAgainObject];
+			}
+
+			Meteor.call('saveUserPreferences', { dontAskAgainList }, function(error) {
+				if (error) {
+					return handleError(error);
+				}
+			});
+		}
+
 		if (instance.data.input) {
-			return modal.confirm($('.js-modal-input').val());
+			modal.confirm(document.getElementsByClassName('js-modal-input')[0].value);
+			return;
 		}
 
 		modal.confirm(true);
@@ -121,5 +158,5 @@ Template.rc_modal.events({
 			e.stopPropagation();
 			modal.close();
 		}
-	}
+	},
 });
