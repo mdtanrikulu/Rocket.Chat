@@ -78,6 +78,7 @@ Package.onUse(function(api) {
 	api.addFiles('server/lib/metrics.js', 'server');
 
 	api.addFiles('server/lib/RateLimiter.js', 'server');
+	api.addFiles('server/lib/URLBlocker.js', 'server');
 
 	// SERVER FUNCTIONS
 	api.addFiles('server/functions/isDocker.js', 'server');
