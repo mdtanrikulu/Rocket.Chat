@@ -1,10 +1,14 @@
 import { Meteor } from 'meteor/meteor';
 
+import { hasPermission } from '../../../../app/authorization';
+import { Users } from '../../../../app/models';
+
 Meteor.publish('personalAccessTokens', function() {
+	console.warn('The publication "personalAccessTokens" is deprecated and will be removed after version v3.0.0');
 	if (!this.userId) {
 		return this.ready();
 	}
-	if (!RocketChat.settings.get('API_Enable_Personal_Access_Tokens')) {
+	if (!hasPermission(this.userId, 'create-personal-access-tokens')) {
 		return this.ready();
 	}
 	const self = this;
@@ -15,7 +19,7 @@ Meteor.publish('personalAccessTokens', function() {
 			createdAt: loginToken.createdAt,
 			lastTokenPart: loginToken.lastTokenPart,
 		}));
-	const handle = RocketChat.models.Users.getLoginTokensByUserId(this.userId).observeChanges({
+	const handle = Users.getLoginTokensByUserId(this.userId).observeChanges({
 		added(id, fields) {
 			self.added('personal_access_tokens', id, { tokens: getFieldsToPublish(fields) });
 		},

@@ -1,11 +1,6 @@
-/* eslint-env mocha */
-/* eslint-disable func-names, prefer-arrow-callback */
-
 import mainContent from '../../pageobjects/main-content.page';
 import sideNav from '../../pageobjects/side-nav.page';
 import Global from '../../pageobjects/global';
-
-// test data imports
 import { username, email, password } from '../../data/user.js';
 import { publicChannelName, privateChannelName } from '../../data/channel.js';
 import { targetUser, imgURL } from '../../data/interactions.js';
@@ -112,10 +107,6 @@ function messageActionsTest() {
 				mainContent.messageActionMenu.isVisible().should.be.true;
 			});
 
-			it('it should show the reply action', () => {
-				mainContent.messageReply.isVisible().should.be.true;
-			});
-
 			it('it should show the edit action', () => {
 				mainContent.messageEdit.isVisible().should.be.true;
 			});
@@ -162,7 +153,7 @@ function messageActionsTest() {
 		describe('[Usage]', () => {
 			describe('Reply:', () => {
 				before(() => {
-					mainContent.openMessageActionMenu();
+					mainContent.lastMessage.moveToObject();
 				});
 				it('it should reply the message', () => {
 					mainContent.selectAction('reply');
@@ -170,8 +161,8 @@ function messageActionsTest() {
 				});
 
 				it('it should check if the message was replied', () => {
-					mainContent.lastMessageTextAttachment.waitForVisible(5000);
-					mainContent.lastMessageTextAttachment.getText().should.equal(mainContent.beforeLastMessage.getText());
+					mainContent.lastMessageQuote.waitForVisible(5000);
+					mainContent.lastMessageQuote.getAttribute('data-tmid').should.equal(mainContent.beforeLastMessageQuote.getAttribute('data-id'));
 				});
 			});
 

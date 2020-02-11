@@ -1,8 +1,15 @@
-/* globals UserPresence, fireGlobalEvent */
-
+import { Meteor } from 'meteor/meteor';
+import { Tracker } from 'meteor/tracker';
+import { Session } from 'meteor/session';
+import { TimeSync } from 'meteor/mizzao:timesync';
+import { UserPresence } from 'meteor/konecty:user-presence';
 import toastr from 'toastr';
 import hljs from 'highlight.js';
+
+import { fireGlobalEvent } from '../../app/ui-utils';
+import { getUserPreference } from '../../app/utils';
 import 'highlight.js/styles/github.css';
+import { syncUserdata } from '../lib/userData';
 
 hljs.initHighlightingOnLoad();
 
@@ -21,34 +28,20 @@ Meteor.startup(function() {
 	window.lastMessageWindow = {};
 	window.lastMessageWindowHistory = {};
 
-	Tracker.autorun(function(computation) {
-		if (!Meteor.userId() && !RocketChat.settings.get('Accounts_AllowAnonymousRead')) {
-			return;
-		}
-		Meteor.subscribe('userData');
-		Meteor.subscribe('activeUsers');
-		computation.stop();
-	});
-
 	let status = undefined;
-	Tracker.autorun(function() {
-		if (!Meteor.userId()) {
+	Tracker.autorun(async function() {
+		const uid = Meteor.userId();
+		if (!uid) {
 			return;
 		}
-		const user = RocketChat.models.Users.findOne(Meteor.userId(), {
-			fields: {
-				status: 1,
-				'settings.preferences.idleTimeLimit': 1,
-				'settings.preferences.enableAutoAway': 1,
-			},
-		});
 
+		const user = await syncUserdata(uid);
 		if (!user) {
 			return;
 		}
 
-		if (RocketChat.getUserPreference(user, 'enableAutoAway')) {
-			const idleTimeLimit = RocketChat.getUserPreference(user, 'idleTimeLimit') || 300;
+		if (getUserPreference(user, 'enableAutoAway')) {
+			const idleTimeLimit = getUserPreference(user, 'idleTimeLimit') || 300;
 			UserPresence.awayTime = idleTimeLimit * 1000;
 		} else {
 			delete UserPresence.awayTime;
