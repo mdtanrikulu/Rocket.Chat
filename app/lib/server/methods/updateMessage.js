@@ -6,6 +6,7 @@ import { Messages } from '../../../models';
 import { settings } from '../../../settings';
 import { hasPermission } from '../../../authorization';
 import { updateMessage } from '../functions';
+import { URLBlocker } from '../lib';
 
 Meteor.methods({
 	updateMessage(message) {
@@ -56,6 +57,8 @@ Meteor.methods({
 
 		message.u = originalMessage.u;
 
-		return updateMessage(message, Meteor.user(), originalMessage);
+		if (URLBlocker.blockURL(Meteor.user(), message)) {
+			return updateMessage(message, Meteor.user(), originalMessage);
+		}
 	},
 });

@@ -13,5 +13,6 @@ export { hostname } from '../../lib/startup/settingsOnLoadSiteUrl';
 export { passwordPolicy } from './passwordPolicy';
 export { validateEmailDomain } from './validateEmailDomain';
 export { RateLimiterClass as RateLimiter } from './RateLimiter';
+export { URLBlocker } from './URLBlocker';
 export { processDirectEmail } from './processDirectEmail';
 export { msgStream } from './msgStream';
